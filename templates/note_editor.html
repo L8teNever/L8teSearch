@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Notiz Bearbeiten | L8teSearch</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+    <style type="text/tailwindcss">
+        @layer base {
+            body {
+                @apply font-['Inter',-apple-system,BlinkMacSystemFont,sans-serif] antialiased;
+                background: 
+                    radial-gradient(at 0% 0%, rgba(130, 180, 255, 0.15) 0px, transparent 50%),
+                    radial-gradient(at 100% 0%, rgba(180, 150, 255, 0.15) 0px, transparent 50%),
+                    #f8fafc;
+            }
+        }
+        .glass-panel {
+            @apply bg-white/40 backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)];
+        }
+        .glass-input {
+            @apply bg-white/40 backdrop-blur-lg border border-slate-200 focus:bg-white/60 focus:border-blue-400 focus:ring-0 transition-all shadow-sm;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen">
+    <div class="max-w-4xl mx-auto px-6 py-12">
+        <header class="flex items-center justify-between mb-12">
+            <div class="flex items-center gap-4">
+                <button onclick="window.location.href='/'"
+                    class="p-3 hover:bg-white/60 rounded-2xl transition-all text-blue-600 flex items-center gap-2 font-bold text-sm">
+                    <span class="material-symbols-outlined">arrow_back</span>
+                    Dashboard
+                </button>
+                <div class="h-8 w-px bg-slate-200"></div>
+                <h1 class="text-xl font-extrabold text-slate-900">Notiz bearbeiten</h1>
+            </div>
+            <button onclick="save()"
+                class="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-2xl text-sm font-bold shadow-xl shadow-blue-500/20 hover:scale-105 active:scale-95 transition-all">
+                <span class="material-symbols-outlined">save</span>
+                Speichern
+            </button>
+        </header>
+
+        <main class="space-y-8">
+            <!-- Source Card -->
+            <div class="glass-panel rounded-[2.5rem] p-8 flex items-center justify-between">
+                <div class="flex items-center gap-6">
+                    <div class="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-500">
+                        <span class="material-symbols-outlined text-3xl">article</span>
+                    </div>
+                    <div>
+                        <p class="font-bold text-slate-900">{{ note.title }}</p>
+                        <p class="text-xs text-slate-400 truncate max-w-md">{{ note.url }}</p>
+                    </div>
+                </div>
+                <a href="{{ note.url }}" target="_blank"
+                    class="p-4 bg-slate-100/50 hover:bg-slate-200/50 rounded-2xl transition-all">
+                    <span class="material-symbols-outlined text-slate-400">open_in_new</span>
+                </a>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2">
+                    <div class="glass-panel rounded-[2.5rem] p-10 h-full">
+                        <label
+                            class="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-6">Inhalt</label>
+                        <textarea id="note-content"
+                            class="w-full min-h-[400px] bg-transparent border-none focus:ring-0 p-0 text-xl leading-relaxed text-slate-800 italic font-medium placeholder-slate-300 resize-none">{{ note.text }}</textarea>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="glass-panel rounded-[2.5rem] p-8 space-y-6">
+                        <div class="space-y-4">
+                            <label
+                                class="text-[11px] font-black text-slate-400 uppercase tracking-widest block">Kategorie</label>
+                            <input id="note-category" type="text" value="{{ note.category }}"
+                                class="glass-input w-full rounded-2xl px-6 py-4 text-sm font-bold text-blue-600 uppercase tracking-wider">
+                        </div>
+                        <div class="space-y-4">
+                            <label
+                                class="text-[11px] font-black text-slate-400 uppercase tracking-widest block">Tags</label>
+                            <input id="note-tags" type="text" value="{{ (note.tags or [])|join(', ') }}"
+                                class="glass-input w-full rounded-2xl px-6 py-4 text-sm font-medium text-slate-600">
+                        </div>
+                    </div>
+
+                    <div class="glass-panel rounded-[2.5rem] p-8 bg-red-50/20 border-red-100">
+                        <button onclick="deleteNote()"
+                            class="w-full flex items-center justify-center gap-3 py-4 text-red-500 font-bold hover:bg-red-50 rounded-2xl transition-all">
+                            <span class="material-symbols-outlined">delete</span>
+                            Löschen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        async function save() {
+            const btn = document.querySelector('button[onclick="save()"]');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span>';
+            btn.disabled = true;
+
+            const newTags = document.getElementById('note-tags').value.split(',').map(t => t.trim()).filter(t => t);
+
+            await fetch('/edit_note', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project: "{{ project }}",
+                    id: "{{ note.id }}",
+                    text: document.getElementById('note-content').value,
+                    category: document.getElementById('note-category').value,
+                    tags: newTags
+                })
+            });
+
+            window.location.href = '/';
+        }
+
+        async function deleteNote() {
+            if (confirm("Notiz löschen?")) {
+                await fetch('/delete_note', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project: "{{ project }}", id: "{{ note.id }}" })
+                });
+                window.location.href = '/';
+            }
+        }
+    </script>
+</body>
+
+</html>

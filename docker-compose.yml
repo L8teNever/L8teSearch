@@ -1,0 +1,10 @@
+services:
+  l8tesearch:
+    build: .
+    container_name: l8tesearch
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./projects.json:/app/projects.json
+      - ./static/uploads:/app/static/uploads
+    restart: unless-stopped
