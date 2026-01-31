@@ -1,4 +1,5 @@
 import shutil
+import time
 from flask import Flask, render_template, request, jsonify, Response
 import requests
 from bs4 import BeautifulSoup
@@ -600,6 +601,23 @@ def proxy():
 
     except Exception as e:
         return f"Error loading page: {str(e)}", 500
+
+@app.route('/stream')
+def stream():
+    def event_stream():
+        last_mtime = 0
+        while True:
+            if os.path.exists(PROJECTS_FILE):
+                try:
+                    mtime = os.path.getmtime(PROJECTS_FILE)
+                    if mtime > last_mtime:
+                        last_mtime = mtime
+                        projects = load_projects_from_disk()
+                        yield f"data: {json.dumps(projects)}\n\n"
+                except OSError:
+                    pass
+            time.sleep(0.5)
+    return Response(event_stream(), mimetype="text/event-stream")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=9999)

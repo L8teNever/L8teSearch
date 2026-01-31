@@ -321,11 +321,11 @@
                         Mode</button>
                 </div>
                 <div class="relative">
-                    <input id="sidebar-search" onkeypress="if(event.key === 'Enter') startSidebarSearch()"
+                    <input id="sidebar-search" onkeypress="if(event.key === 'Enter') startProjectSearch()"
                         class="sidebar-search-input rounded-xl pl-4 pr-10 py-1.5 text-xs font-medium w-48"
-                        placeholder="Google Suche..." type="text" />
-                    <span
-                        class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                        placeholder="Im Projekt suchen..." type="text" />
+                    <span onclick="startProjectSearch()"
+                        class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm cursor-pointer hover:text-blue-500 transition-colors">search</span>
                 </div>
             </div>
         </header>
@@ -413,11 +413,16 @@
                     </div>
                 </div>
             </div>
-            <footer class="p-8 bg-slate-50/50 flex justify-end gap-4 border-t border-slate-200/50 rounded-b-[2.5rem]">
-                <button onclick="closeNodeDetail()"
-                    class="px-6 py-3 font-bold text-sm text-slate-500 hover:text-slate-900 transition-colors">Abbrechen</button>
-                <button onclick="saveNodeDetails()"
-                    class="bg-emerald-600 text-white px-10 py-3 rounded-2xl font-bold text-sm shadow-xl hover:bg-emerald-700 transition-all">Speichern</button>
+            <footer
+                class="p-8 bg-slate-50/50 flex items-center justify-between border-t border-slate-200/50 rounded-b-[2.5rem]">
+                <button onclick="deleteNode()"
+                    class="px-6 py-3 font-bold text-sm text-red-500 hover:bg-red-50 rounded-xl transition-colors">Löschen</button>
+                <div class="flex gap-4">
+                    <button onclick="closeNodeDetail()"
+                        class="px-6 py-3 font-bold text-sm text-slate-500 hover:text-slate-900 transition-colors">Abbrechen</button>
+                    <button onclick="saveNodeDetails()"
+                        class="bg-emerald-600 text-white px-10 py-3 rounded-2xl font-bold text-sm shadow-xl hover:bg-emerald-700 transition-all">Speichern</button>
+                </div>
             </footer>
         </div>
     </div>
@@ -573,6 +578,7 @@
         let currentProjectName = "";
         let mindmapData = [];
         let activeNodeId = null;
+        let lastProjectJson = "";
 
         // --- LIFE CYCLE ---
         window.addEventListener('DOMContentLoaded', () => {
@@ -593,6 +599,9 @@
                         switchTab(tabId, false);
                     }
                 }
+
+                // Start Live Stream (Server Push)
+                setupLiveStream();
             });
         });
 
@@ -673,6 +682,9 @@
             const data = projects[currentProjectName];
             if (!data) return;
 
+            // Update Hash for polling
+            lastProjectJson = JSON.stringify(data);
+
             // Load Mindmap Data if exists, else default
             mindmapData = data.mindmap || [
                 { id: 1, title: 'Hauptthema', notes: '', urls: [], children: [] }
@@ -682,6 +694,48 @@
             renderLibrary(data);
             renderNotes(data);
             if (document.getElementById('view-mindmap').classList.contains('active')) renderMindmap();
+        }
+
+        function setupLiveStream() {
+            const evtSource = new EventSource("/stream");
+
+            evtSource.onmessage = (e) => {
+                if (!currentProjectName) return;
+                // Avoid updates while typing
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+                try {
+                    const projects = JSON.parse(e.data);
+                    const data = projects[currentProjectName];
+
+                    if (!data) return;
+
+                    const json = JSON.stringify(data);
+                    if (json !== lastProjectJson) {
+                        lastProjectJson = json;
+
+                        // Update Data
+                        mindmapData = data.mindmap || mindmapData;
+
+                        // Smart Render (only update if visible)
+                        renderDashboard(data);
+                        renderLibrary(data);
+                        renderNotes(data);
+
+                        // Update Sidebar if active
+                        const readerView = document.getElementById('view-reader');
+                        if (!readerView.classList.contains('hidden')) {
+                            const searchInput = document.getElementById('sidebar-search');
+                            if (!searchInput.value) loadReaderSidebarList();
+                        }
+                    }
+                } catch (err) { console.error("Stream update error", err); }
+            };
+
+            evtSource.onerror = () => {
+                // simple reconnect logic handled by browser usually, but we can log
+                console.log("Stream connection lost, waiting for reconnect...");
+            };
         }
 
         async function createNewProject() {
@@ -970,6 +1024,29 @@
             node.notes = document.getElementById('node-detail-notes').value;
             await saveMindmapToBackend();
             closeNodeDetail();
+            // renderMindmap(); // Let live update handle it or force it
+            renderMindmap();
+        }
+
+        async function deleteNode() {
+            if (!confirm("Diesen Punkt und alle Unterpunkte löschen?")) return;
+
+            const removeRecursive = (nodes, id) => {
+                const idx = nodes.findIndex(n => n.id == id);
+                if (idx > -1) {
+                    nodes.splice(idx, 1);
+                    return true;
+                }
+                for (let n of nodes) {
+                    if (n.children && removeRecursive(n.children, id)) return true;
+                }
+                return false;
+            };
+
+            removeRecursive(mindmapData, activeNodeId);
+
+            await saveMindmapToBackend();
+            closeNodeDetail();
             renderMindmap();
         }
 
@@ -1244,11 +1321,105 @@
             // Re-render notes is safer for now if we filter in memory
         }
 
-        function startSidebarSearch() {
+        async function startProjectSearch() {
             const query = document.getElementById('sidebar-search').value;
             if (!query) return;
-            const url = "https://www.google.com/search?q=" + encodeURIComponent(query);
-            openReader(url, "Suche");
+
+            const list = document.getElementById('reader-content-list');
+            list.innerHTML = '<div class="p-4 text-center"><span class="material-symbols-outlined animate-spin text-blue-600">sync</span><p class="text-[10px] text-slate-400 mt-2">Durchsuche Projekt...</p></div>';
+
+            try {
+                // Get fresh project data
+                const res = await fetch('/projects');
+                const projects = await res.json();
+                const project = projects[currentProjectName];
+
+                // Filter out Google URLs
+                const targetUrls = (project.urls || []).filter(u => !u.includes('google.com/search'));
+
+                if (targetUrls.length === 0) {
+                    list.innerHTML = '<p class="text-[10px] text-slate-400 italic p-4 text-center">Keine durchsuchbaren Seiten im Projekt.</p>';
+                    return;
+                }
+
+                // Call Search API
+                const searchRes = await fetch('/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        urls: targetUrls,
+                        keywords: query.split(' ')
+                    })
+                });
+
+                const results = await searchRes.json();
+
+                // Render Results
+                if (!results || results.length === 0) {
+                    list.innerHTML = '<p class="text-[10px] text-slate-400 italic p-4 text-center">Keine Treffer gefunden.</p>';
+                    return;
+                }
+
+                list.innerHTML = results.map(r => {
+                    if (r.status === 'error' || !r.findings || r.findings.length === 0) return '';
+
+                    const domain = new URL(r.url).hostname.replace('www.', '');
+                    const totalMatches = r.findings.reduce((acc, f) => acc + f.count, 0);
+
+                    return `
+                        <div class="mb-3">
+                            <button onclick="openReader('${r.url}', '${domain}')" class="w-full text-left px-3 py-2 bg-indigo-50/50 hover:bg-indigo-50 rounded-xl border border-indigo-100 transition-all group">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-[10px] font-bold text-indigo-600 truncate max-w-[150px]">${domain}</span>
+                                    <span class="px-1.5 py-0.5 bg-indigo-200 text-indigo-700 rounded text-[9px] font-bold">${totalMatches} Treffer</span>
+                                </div>
+                                <div class="space-y-1">
+                                    ${r.findings.map(f => `
+                                        <div class="text-[9px] text-slate-500 leading-tight pl-2 border-l-2 border-indigo-200">
+                                            "${f.snippets[0].replace(query, `<strong class="text-indigo-600 bg-indigo-100">${query}</strong>`)}"
+                                        </div>
+                                    `).slice(0, 2).join('')}
+                                </div>
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+
+                if (list.innerHTML === '') {
+                    list.innerHTML = '<p class="text-[10px] text-slate-400 italic p-4 text-center">Keine relevanten Treffer.</p>';
+                } else {
+                    // Add a "Back to List" button
+                    list.innerHTML = `<button onclick="loadReaderSidebarList()" class="w-full mb-4 px-3 py-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg flex items-center justify-center gap-2">
+                        <span class="material-symbols-outlined text-sm">arrow_back</span> Alle Seiten anzeigen
+                     </button>` + list.innerHTML;
+                }
+
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '<p class="text-[10px] text-red-400 italic p-4 text-center">Fehler bei der Suche.</p>';
+            }
+        }
+
+        function loadReaderSidebarList() {
+            fetch('/projects').then(r => r.json()).then(projects => {
+                const data = projects[currentProjectName];
+                const contentList = document.getElementById('reader-content-list');
+                if (!contentList) return;
+
+                const urls = data.urls || [];
+                // Only show non-google links in standard list too, to keep it clean
+                const content = urls.filter(u => !u.includes('google.com/search'));
+
+                contentList.innerHTML = content.map(u => {
+                    const domain = u.split('/')[2];
+                    const iframe = document.getElementById('reader-iframe');
+                    const currentUrl = iframe.src ? new URL(iframe.src).searchParams.get('url') : '';
+                    const active = u === currentUrl ? 'bg-blue-600/10 text-blue-600 font-bold border border-blue-200' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100';
+                    return `<button onclick="openReader('${u}', '${domain}')" class="w-full text-left px-3 py-2 text-[10px] rounded-xl flex items-center gap-2 transition-all ${active}">
+                                <span class="material-symbols-outlined text-sm">public</span> <span class="truncate">${domain}</span>
+                            </button>`;
+                }).join('') || '<p class="text-[9px] text-slate-300 italic px-4 py-2">Keine Seiten gespeichert</p>';
+            });
         }
 
         // Bridge function for the header save button
