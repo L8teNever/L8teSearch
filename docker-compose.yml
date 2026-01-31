@@ -1,5 +1,6 @@
 services:
   l8tesearch:
+    image: l8tenever/l8tesearch:latest
     build: .
     container_name: l8tesearch
     ports:
