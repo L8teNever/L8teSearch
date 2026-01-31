@@ -6,6 +6,6 @@ services:
     ports:
       - "9999:9999"
     volumes:
-      - ./projects.json:/app/projects.json
+      - ./data:/app/data
       - ./static/uploads:/app/static/uploads
     restart: unless-stopped
